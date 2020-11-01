@@ -1,11 +1,11 @@
-import React, {
-  ReactNode,
-  Suspense,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
-import { RecoilRoot, atom, useRecoilValue, useSetRecoilState } from "recoil";
+import React, { ReactNode, Suspense, useEffect } from "react";
+import {
+  RecoilRoot,
+  atom,
+  useRecoilValue,
+  useSetRecoilState,
+  useRecoilValueLoadable,
+} from "recoil";
 import Link from "next/link";
 import { fetcher } from "../libs/fetch";
 
@@ -20,66 +20,44 @@ const dataLoadableAtom = atom<Loadable<string[]> | undefined>({
   key: "DataLoadableAtom",
   default: undefined,
 });
-const dataAtom = atom<string[] | undefined | null>({
+const dataAtom = atom<string[] | undefined>({
   key: "DataAtom",
-  default: null,
+  default: undefined,
 });
 const titleAtom = atom<string>({
   key: "Title",
   default: "Popular Repos",
 });
 
-const dataSelector = selector<{
-  title: string;
-  repos: Loadable<string[]> | undefined;
-}>({
-  key: "DataSelector",
-  get: ({ get }) => {
+const loadableDataSelector = selector<string[]>({
+  key: "LoadableDataSelector",
+  get: async ({ get }) => {
     const res = get(dataAtom);
-    const repos =
-      res === null
-        ? undefined
-        : res == undefined
-        ? new Loadable<string[]>(new Promise(() => {}))
-        : new Loadable<string[]>(Promise.resolve(res));
-    return {
-      title: get(titleAtom),
-      repos: repos,
-    };
+    return new Promise<string[]>((resolve, reject) => {
+      try {
+        if (res != null) {
+          resolve(res);
+        }
+      } catch (e) {
+        reject(e);
+      }
+    });
   },
 });
 
-// const dataSelector = selector<{
-//   title: string;
-//   repos: Loadable<string[]> | undefined;
-// }>({
-//   key: "DataSelector",
-//   get: ({ get }) => {
-//     return {
-//       title: get(titleAtom),
-//       repos: get(dataLoadableAtom),
-//     };
-//   },
-// });
-
 const useData = () => {
-  const data = useRecoilValue(dataSelector);
-  return {
-    title: data.title,
-    repos: data.repos?.get(),
-  };
+  const data = useRecoilValue(loadableDataSelector);
+  return data;
+};
+
+const useLoadableData = () => {
+  const data = useRecoilValueLoadable(loadableDataSelector);
+  if (data.state === "hasValue") {
+    return data.contents;
+  }
 };
 
 const useRequest = () => {
-  // const setDataLoadable = useSetRecoilState(dataLoadableAtom);
-
-  // useEffect(() => {
-  //   if (!data) {
-  //     setDataLoadable(new Loadable(new Promise(() => {})));
-  //     return;
-  //   }
-  //   setDataLoadable(new Loadable(Promise.resolve(data)));
-  // }, [data]);
   const setData = useSetRecoilState(dataAtom);
   const { data } = useSWR<string[]>("/api/data", fetcher, {
     suspense: false,
@@ -90,38 +68,22 @@ const useRequest = () => {
   }, [data]);
 };
 
-function ReposComponent({
-  loadable,
-}: {
-  loadable: Loadable<string[]> | undefined;
-}) {
-  // const { repos, title } = useData();
+function ReposComponent() {
+  const data = useLoadableData();
   const title = "Measure";
-  // const { data } = useSWR<string[]>("/api/data", fetcher);
-  // const [loadable, setLoadable] = useState<Loadable<string[]> | undefined>();
-  // useEffect(() => {
-  //   if (!data) {
-  //     setLoadable(new Loadable<string[]>(new Promise(() => {})));
-  //     return;
-  //   }
-  //   setLoadable(new Loadable<string[]>(Promise.resolve(data)));
-  // }, [data]);
   return (
     <>
       <h1>{title}</h1>
       <p>
         <button
           onClick={() => {
-            mutate(
-              "/api/data",
-              loadable ? [...loadable.get(), "hoge"] : ["hoge"]
-            );
+            mutate("/api/data", data && [...data, "hoge"]);
           }}
         >
           Load Users
         </button>
       </p>
-      {loadable?.get().map((project) => (
+      {data?.map((project) => (
         <p key={project}>
           <Link href="/[user]/[repo]" as={`/${project}`}>
             <a>{project}</a>
@@ -152,23 +114,14 @@ class ErrorBoundary extends React.Component<
 }
 
 function HomePage() {
-  // useRequest();
-  const { data } = useSWR<string[]>("/api/data", fetcher);
-  const [loadable, setLoadable] = useState<Loadable<string[]> | undefined>();
-  useEffect(() => {
-    if (!data) {
-      setLoadable(new Loadable<string[]>(new Promise(() => {})));
-      return;
-    }
-    setLoadable(new Loadable<string[]>(Promise.resolve(data)));
-  }, [data]);
+  useRequest();
   return (
     <div style={{ textAlign: "center" }}>
       <h1>Trending Projects</h1>
       {!isServer ? (
         <ErrorBoundary fallback={<h2>Could not fetch posts.</h2>}>
           <Suspense fallback={<div>loading...</div>}>
-            <ReposComponent loadable={loadable} />
+            <ReposComponent />
           </Suspense>
         </ErrorBoundary>
       ) : null}
