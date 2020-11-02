@@ -27,6 +27,17 @@ type MountainType = {
   updatedAt: string;
 };
 
+const fuji: MountainType = {
+  title: "Fuji",
+  description: "Highest mountain of Japan",
+  height: "3336",
+  countries: ["Japan"],
+  continent: "Eurasia",
+  image: "",
+  slug: "fuji",
+  updatedAt: "2020/12/12",
+};
+
 const dataAtom = atom<MountainType[] | undefined>({
   key: "DataAtom",
   default: undefined,
@@ -86,40 +97,31 @@ const useRequest = () => {
 
 const useData = () => {
   const data = useRecoilValue(loadableDataSelector);
-  return data;
+  const addRepos = (mountain: MountainType) => {
+    if (data != undefined) {
+      mutate("/mountains", [...data, mountain]);
+    }
+  };
+
+  return { data, addRepos };
 };
 
-const useLoadableData = () => {
-  const data = useRecoilValueLoadable(loadableDataSelector);
+function ReposComponent() {
+  const { data, addRepos } = useData();
 
-  return data;
-};
-
-function LoadableReposComponent() {
-  const data = useLoadableData();
-  const title = "Measure";
-  if (data?.state === "loading") {
-    return <h2>ローディング</h2>;
-  }
-  if (data?.state === "hasError") {
-    return <h2>This is Error</h2>;
-  }
   return (
     <>
-      <h1>{title}</h1>
+      <h1 style={{ color: "gray" }}>Suspense</h1>
       <p>
         <button
           onClick={() => {
-            mutate(
-              "/mountains",
-              data.state === "hasValue" && [...data.contents, "hoge"]
-            );
+            addRepos(fuji);
           }}
         >
           Load Users
         </button>
       </p>
-      {data.contents.map((mountain) => (
+      {data.map((mountain) => (
         <p key={mountain.slug}>
           <Link href="/mountains" as={`/${mountain.slug}`}>
             <a>{mountain.title}</a>
@@ -130,23 +132,38 @@ function LoadableReposComponent() {
   );
 }
 
-function ReposComponent() {
-  const data = useData();
-  const title = "Measure";
+const useLoadableData = () => {
+  const data = useRecoilValueLoadable(loadableDataSelector);
+  const addRepos = (mountain: MountainType) => {
+    if (data.state === "hasValue") {
+      mutate("/mountains", [...data.contents, mountain]);
+    }
+  };
 
+  return { data, addRepos };
+};
+
+function LoadableReposComponent() {
+  const { data, addRepos } = useLoadableData();
+  if (data?.state === "loading") {
+    return <h2>ローディング</h2>;
+  }
+  if (data?.state === "hasError") {
+    return <h2>This is Error</h2>;
+  }
   return (
     <>
-      <h1>{title}</h1>
+      <h1 style={{ color: "gray" }}>Not Suspense</h1>
       <p>
         <button
           onClick={() => {
-            mutate("/mountains", data && [...data, "hoge"]);
+            addRepos(fuji);
           }}
         >
           Load Users
         </button>
       </p>
-      {data.map((mountain) => (
+      {data.contents.map((mountain) => (
         <p key={mountain.slug}>
           <Link href="/mountains" as={`/${mountain.slug}`}>
             <a>{mountain.title}</a>
@@ -178,19 +195,16 @@ class ErrorBoundary extends React.Component<
 
 function HomePage() {
   useRequest();
-  // const errorState = useRecoilValue(errorAtom);
 
-  // if (errorState.error) {
-  //   return <h2 style={{ textAlign: "center" }}>{errorState.message}</h2>;
-  // }
   return (
     <div style={{ textAlign: "center" }}>
       <h1>Trending Projects</h1>
 
       {!isServer ? (
         <ErrorBoundary fallback={<h2>Could not fetch posts.</h2>}>
+          <LoadableReposComponent />
           <Suspense fallback={<div>loading...</div>}>
-            <LoadableReposComponent />
+            <ReposComponent />
           </Suspense>
         </ErrorBoundary>
       ) : null}

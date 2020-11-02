@@ -1,5 +1,7 @@
 import fetch from "isomorphic-unfetch";
 const baseUrl = "https://api.nuxtjs.dev";
+const sleep = (msec: number) =>
+  new Promise((resolve) => setTimeout(resolve, msec));
 
 export const fetcher = async (url: string) => {
   const res = await fetch(`${baseUrl}${url}`);
@@ -12,6 +14,7 @@ export const fetcher = async (url: string) => {
     error.status = res.status;
     throw error;
   }
+  await sleep(2000);
   return res.json();
 };
 
