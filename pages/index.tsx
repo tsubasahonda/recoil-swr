@@ -16,11 +16,18 @@ import { selector } from "recoil";
 
 const isServer = typeof window === "undefined";
 
-const dataLoadableAtom = atom<Loadable<string[]> | undefined>({
-  key: "DataLoadableAtom",
-  default: undefined,
-});
-const dataAtom = atom<string[] | undefined>({
+type MountainType = {
+  title: string;
+  description: string;
+  height: string;
+  countries: string[];
+  continent: string;
+  image: string;
+  slug: string;
+  updatedAt: string;
+};
+
+const dataAtom = atom<MountainType[] | undefined>({
   key: "DataAtom",
   default: undefined,
 });
@@ -28,14 +35,25 @@ const titleAtom = atom<string>({
   key: "Title",
   default: "Popular Repos",
 });
+const errorAtom = atom<{ error: boolean; message: string }>({
+  key: "ErrorAtom",
+  default: {
+    error: false,
+    message: "",
+  },
+});
 
-const loadableDataSelector = selector<string[]>({
+const loadableDataSelector = selector<MountainType[]>({
   key: "LoadableDataSelector",
   get: async ({ get }) => {
     const res = get(dataAtom);
-    return new Promise<string[]>((resolve, reject) => {
+    const error = get(errorAtom);
+    return new Promise<MountainType[]>((resolve, reject) => {
       try {
-        if (res != null) {
+        if (error.error) {
+          reject(new Error(error.message));
+        }
+        if (res != undefined) {
           resolve(res);
         }
       } catch (e) {
@@ -43,7 +61,28 @@ const loadableDataSelector = selector<string[]>({
       }
     });
   },
+  set: (_, newValue) => {},
 });
+
+const useRequest = () => {
+  const setData = useSetRecoilState(dataAtom);
+  const { data, error } = useSWR<MountainType[]>("/mountains", fetcher);
+
+  const setErrorState = useSetRecoilState(errorAtom);
+
+  useEffect(() => {
+    if (error) {
+      setErrorState({
+        error: true,
+        message: "エラーが検知されました",
+      });
+    }
+  }, [error]);
+
+  useEffect(() => {
+    setData(data);
+  }, [data]);
+};
 
 const useData = () => {
   const data = useRecoilValue(loadableDataSelector);
@@ -52,41 +91,65 @@ const useData = () => {
 
 const useLoadableData = () => {
   const data = useRecoilValueLoadable(loadableDataSelector);
-  if (data.state === "hasValue") {
-    return data.contents;
-  }
+
+  return data;
 };
 
-const useRequest = () => {
-  const setData = useSetRecoilState(dataAtom);
-  const { data } = useSWR<string[]>("/api/data", fetcher, {
-    suspense: false,
-  });
-
-  useEffect(() => {
-    setData(data);
-  }, [data]);
-};
-
-function ReposComponent() {
+function LoadableReposComponent() {
   const data = useLoadableData();
   const title = "Measure";
+  if (data?.state === "loading") {
+    return <h2>ローディング</h2>;
+  }
+  if (data?.state === "hasError") {
+    return <h2>This is Error</h2>;
+  }
   return (
     <>
       <h1>{title}</h1>
       <p>
         <button
           onClick={() => {
-            mutate("/api/data", data && [...data, "hoge"]);
+            mutate(
+              "/mountains",
+              data.state === "hasValue" && [...data.contents, "hoge"]
+            );
           }}
         >
           Load Users
         </button>
       </p>
-      {data?.map((project) => (
-        <p key={project}>
-          <Link href="/[user]/[repo]" as={`/${project}`}>
-            <a>{project}</a>
+      {data.contents.map((mountain) => (
+        <p key={mountain.slug}>
+          <Link href="/mountains" as={`/${mountain.slug}`}>
+            <a>{mountain.title}</a>
+          </Link>
+        </p>
+      ))}
+    </>
+  );
+}
+
+function ReposComponent() {
+  const data = useData();
+  const title = "Measure";
+
+  return (
+    <>
+      <h1>{title}</h1>
+      <p>
+        <button
+          onClick={() => {
+            mutate("/mountains", data && [...data, "hoge"]);
+          }}
+        >
+          Load Users
+        </button>
+      </p>
+      {data.map((mountain) => (
+        <p key={mountain.slug}>
+          <Link href="/mountains" as={`/${mountain.slug}`}>
+            <a>{mountain.title}</a>
           </Link>
         </p>
       ))}
@@ -115,13 +178,19 @@ class ErrorBoundary extends React.Component<
 
 function HomePage() {
   useRequest();
+  // const errorState = useRecoilValue(errorAtom);
+
+  // if (errorState.error) {
+  //   return <h2 style={{ textAlign: "center" }}>{errorState.message}</h2>;
+  // }
   return (
     <div style={{ textAlign: "center" }}>
       <h1>Trending Projects</h1>
+
       {!isServer ? (
         <ErrorBoundary fallback={<h2>Could not fetch posts.</h2>}>
           <Suspense fallback={<div>loading...</div>}>
-            <ReposComponent />
+            <LoadableReposComponent />
           </Suspense>
         </ErrorBoundary>
       ) : null}
