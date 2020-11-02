@@ -3,15 +3,16 @@ import {
   RecoilRoot,
   atom,
   useRecoilValue,
+  useRecoilState,
   useSetRecoilState,
   useRecoilValueLoadable,
+  useRecoilStateLoadable,
 } from "recoil";
 import Link from "next/link";
 import { fetcher } from "../libs/fetch";
 
 import useSWR, { mutate } from "swr";
 
-import { Loadable } from "../libs/loadable";
 import { selector } from "recoil";
 
 const isServer = typeof window === "undefined";
@@ -72,7 +73,9 @@ const loadableDataSelector = selector<MountainType[]>({
       }
     });
   },
-  set: (_, newValue) => {},
+  set: (_, newValue) => {
+    mutate("/mountains", newValue);
+  },
 });
 
 const useRequest = () => {
@@ -96,11 +99,9 @@ const useRequest = () => {
 };
 
 const useData = () => {
-  const data = useRecoilValue(loadableDataSelector);
+  const [data, setData] = useRecoilState(loadableDataSelector);
   const addRepos = (mountain: MountainType) => {
-    if (data != undefined) {
-      mutate("/mountains", [...data, mountain]);
-    }
+    setData([...data, mountain]);
   };
 
   return { data, addRepos };
@@ -133,10 +134,10 @@ function ReposComponent() {
 }
 
 const useLoadableData = () => {
-  const data = useRecoilValueLoadable(loadableDataSelector);
+  const [data, setData] = useRecoilStateLoadable(loadableDataSelector);
   const addRepos = (mountain: MountainType) => {
     if (data.state === "hasValue") {
-      mutate("/mountains", [...data.contents, mountain]);
+      setData([...data.contents, mountain]);
     }
   };
 
