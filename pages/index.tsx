@@ -1,12 +1,16 @@
-import React, { useEffect } from "react";
-import { RecoilRoot, atom, useRecoilState, DefaultValue } from "recoil";
+import React, { useEffect, Suspense, ReactNode } from "react";
+import {
+  RecoilRoot,
+  atom,
+  DefaultValue,
+  useSetRecoilState,
+  useRecoilValue,
+  selectorFamily,
+} from "recoil";
 import Link from "next/link";
 import { fetcher } from "../libs/fetch";
 
-import useSWR, { mutate } from "swr";
-
-import { selector } from "recoil";
-import { useSetRecoilState } from "recoil";
+import useSWR from "swr";
 
 const isServer = typeof window === "undefined";
 
@@ -32,44 +36,44 @@ const fuji: MountainType = {
   updatedAt: "2020/12/12",
 };
 
-const mountainsState = atom<MountainType[]>({
+const mountainsState = atom<MountainType[] | undefined>({
   key: "MountainsState",
-  default: [],
-});
-
-const continentState = atom<string | undefined>({
-  key: "ContinentState",
   default: undefined,
 });
 
-const mountainsSelector = selector<MountainType[]>({
+const mountainsSelector = selectorFamily<MountainType[], string>({
   key: "MountainsSelector",
-  get: ({ get }) => {
+  get: (continent) => async ({ get }) => {
     const mountains = get(mountainsState);
-    const continent = get(continentState);
-    if (continent) {
-      return mountains.filter((mountain) => mountain.continent === continent);
-    }
-    return mountains;
-  },
-  set: ({ set }, newValue) => {
-    if (newValue instanceof DefaultValue) return;
-    set(mountainsState, newValue);
+    return new Promise<MountainType[]>((resolve, reject) => {
+      try {
+        if (mountains == undefined) {
+          return;
+        }
+        if (continent == undefined) {
+          resolve(mountains);
+        }
+        const filtered = mountains.filter(
+          (mountain) => mountain.continent === continent
+        );
+        resolve(filtered);
+      } catch (e) {
+        reject(e);
+      }
+    });
   },
 });
 
-const useMountains = (continent: string) => {
-  const [mountains, setMountains] = useRecoilState(mountainsSelector);
-  const setContinent = useSetRecoilState(continentState);
+const useMountainsRequest = () => {
+  const setMountains = useSetRecoilState(mountainsState);
   const { data } = useSWR<MountainType[]>("/mountains", fetcher);
-
   useEffect(() => {
     if (data) setMountains(data);
   }, [data]);
+};
 
-  useEffect(() => {
-    setContinent(continent);
-  }, [continent]);
+const useMountains = (continent: string) => {
+  const mountains = useRecoilValue(mountainsSelector(continent));
 
   return [mountains] as const;
 };
@@ -92,12 +96,38 @@ function Mountains() {
   );
 }
 
+class ErrorBoundary extends React.Component<
+  { fallback: ReactNode },
+  { hasError: boolean; error: Error | null }
+> {
+  state = { hasError: false, error: null };
+  static getDerivedStateFromError(error: unknown) {
+    return {
+      hasError: true,
+      error,
+    };
+  }
+  render() {
+    if (this.state.hasError) {
+      return this.props.fallback;
+    }
+    return this.props.children;
+  }
+}
+
 function HomePage() {
+  useMountainsRequest();
   return (
     <div style={{ textAlign: "center" }}>
       <h1>Trending Projects</h1>
 
-      {!isServer ? <Mountains /> : null}
+      {!isServer ? (
+        <ErrorBoundary fallback={<h2>Could not fetch posts.</h2>}>
+          <Suspense fallback={<div>loading...</div>}>
+            <Mountains />
+          </Suspense>
+        </ErrorBoundary>
+      ) : null}
     </div>
   );
 }
