@@ -1,19 +1,12 @@
-import React, { ReactNode, Suspense, useEffect } from "react";
-import {
-  RecoilRoot,
-  atom,
-  useRecoilValue,
-  useRecoilState,
-  useSetRecoilState,
-  useRecoilValueLoadable,
-  useRecoilStateLoadable,
-} from "recoil";
+import React, { useEffect } from "react";
+import { RecoilRoot, atom, useRecoilState, DefaultValue } from "recoil";
 import Link from "next/link";
 import { fetcher } from "../libs/fetch";
 
 import useSWR, { mutate } from "swr";
 
 import { selector } from "recoil";
+import { useSetRecoilState } from "recoil";
 
 const isServer = typeof window === "undefined";
 
@@ -39,90 +32,56 @@ const fuji: MountainType = {
   updatedAt: "2020/12/12",
 };
 
-const dataAtom = atom<MountainType[] | undefined>({
-  key: "DataAtom",
+const mountainsState = atom<MountainType[]>({
+  key: "MountainsState",
+  default: [],
+});
+
+const continentState = atom<string | undefined>({
+  key: "ContinentState",
   default: undefined,
 });
-const titleAtom = atom<string>({
-  key: "Title",
-  default: "Popular Repos",
-});
-const errorAtom = atom<{ error: boolean; message: string }>({
-  key: "ErrorAtom",
-  default: {
-    error: false,
-    message: "",
-  },
-});
 
-const loadableDataSelector = selector<MountainType[]>({
-  key: "LoadableDataSelector",
-  get: async ({ get }) => {
-    const res = get(dataAtom);
-    const error = get(errorAtom);
-    return new Promise<MountainType[]>((resolve, reject) => {
-      try {
-        if (error.error) {
-          reject(new Error(error.message));
-        }
-        if (res != undefined) {
-          resolve(res);
-        }
-      } catch (e) {
-        reject(e);
-      }
-    });
-  },
-  set: (_, newValue) => {
-    mutate("/mountains", newValue);
-  },
-});
-
-const useRequest = () => {
-  const setData = useSetRecoilState(dataAtom);
-  const { data, error } = useSWR<MountainType[]>("/mountains", fetcher);
-
-  const setErrorState = useSetRecoilState(errorAtom);
-
-  useEffect(() => {
-    if (error) {
-      setErrorState({
-        error: true,
-        message: "エラーが検知されました",
-      });
+const mountainsSelector = selector<MountainType[]>({
+  key: "MountainsSelector",
+  get: ({ get }) => {
+    const mountains = get(mountainsState);
+    const continent = get(continentState);
+    if (continent) {
+      return mountains.filter((mountain) => mountain.continent === continent);
     }
-  }, [error]);
+    return mountains;
+  },
+  set: ({ set }, newValue) => {
+    if (newValue instanceof DefaultValue) return;
+    set(mountainsState, newValue);
+  },
+});
+
+const useMountains = (continent: string) => {
+  const [mountains, setMountains] = useRecoilState(mountainsSelector);
+  const setContinent = useSetRecoilState(continentState);
+  const { data } = useSWR<MountainType[]>("/mountains", fetcher);
 
   useEffect(() => {
-    setData(data);
+    if (data) setMountains(data);
   }, [data]);
+
+  useEffect(() => {
+    setContinent(continent);
+  }, [continent]);
+
+  return [mountains] as const;
 };
 
-const useData = () => {
-  const [data, setData] = useRecoilState(loadableDataSelector);
-  const addRepos = (mountain: MountainType) => {
-    setData([...data, mountain]);
-  };
-
-  return { data, addRepos };
-};
-
-function ReposComponent() {
-  const { data, addRepos } = useData();
+function Mountains() {
+  const continent = "North America";
+  const [mountains] = useMountains(continent);
 
   return (
     <>
-      <h1 style={{ color: "gray" }}>Suspense</h1>
-      <p>
-        <button
-          onClick={() => {
-            addRepos(fuji);
-          }}
-        >
-          Load Users
-        </button>
-      </p>
-      {data.map((mountain) => (
+      <h1 style={{ color: "gray" }}>{continent}</h1>
+      {mountains.map((mountain) => (
         <p key={mountain.slug}>
           <Link href="/mountains" as={`/${mountain.slug}`}>
             <a>{mountain.title}</a>
@@ -131,84 +90,14 @@ function ReposComponent() {
       ))}
     </>
   );
-}
-
-const useLoadableData = () => {
-  const [data, setData] = useRecoilStateLoadable(loadableDataSelector);
-  const addRepos = (mountain: MountainType) => {
-    if (data.state === "hasValue") {
-      setData([...data.contents, mountain]);
-    }
-  };
-
-  return { data, addRepos };
-};
-
-function LoadableReposComponent() {
-  const { data, addRepos } = useLoadableData();
-  if (data?.state === "loading") {
-    return <h2>ローディング</h2>;
-  }
-  if (data?.state === "hasError") {
-    return <h2>This is Error</h2>;
-  }
-  return (
-    <>
-      <h1 style={{ color: "gray" }}>Not Suspense</h1>
-      <p>
-        <button
-          onClick={() => {
-            addRepos(fuji);
-          }}
-        >
-          Load Users
-        </button>
-      </p>
-      {data.contents.map((mountain) => (
-        <p key={mountain.slug}>
-          <Link href="/mountains" as={`/${mountain.slug}`}>
-            <a>{mountain.title}</a>
-          </Link>
-        </p>
-      ))}
-    </>
-  );
-}
-
-class ErrorBoundary extends React.Component<
-  { fallback: ReactNode },
-  { hasError: boolean; error: Error | null }
-> {
-  state = { hasError: false, error: null };
-  static getDerivedStateFromError(error: unknown) {
-    return {
-      hasError: true,
-      error,
-    };
-  }
-  render() {
-    if (this.state.hasError) {
-      return this.props.fallback;
-    }
-    return this.props.children;
-  }
 }
 
 function HomePage() {
-  useRequest();
-
   return (
     <div style={{ textAlign: "center" }}>
       <h1>Trending Projects</h1>
 
-      {!isServer ? (
-        <ErrorBoundary fallback={<h2>Could not fetch posts.</h2>}>
-          <LoadableReposComponent />
-          <Suspense fallback={<div>loading...</div>}>
-            <ReposComponent />
-          </Suspense>
-        </ErrorBoundary>
-      ) : null}
+      {!isServer ? <Mountains /> : null}
     </div>
   );
 }
