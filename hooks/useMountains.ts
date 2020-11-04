@@ -25,6 +25,7 @@ const useMountains = (): [
   (mountains: MountainType[]) => void
 ] => {
   const { data, mutate } = useSWR<MountainType[]>("/mountains", fetcher);
+  console.log("hoge");
 
   const setMountains = useCallback(
     (mountains: MountainType[]) => {
