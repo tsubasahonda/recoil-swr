@@ -8,34 +8,11 @@ import {
 } from "recoil";
 import Link from "next/link";
 import { fetcher } from "../libs/fetch";
+import { MountainType, LoadableState } from "../libs/types";
 
 import useSWR from "swr";
 
 const isServer = typeof window === "undefined";
-
-type LoadableState<T> =
-  | {
-      type: "hasError";
-      error: Error;
-    }
-  | {
-      type: "loading";
-    }
-  | {
-      type: "hasValue";
-      data: T;
-    };
-
-type MountainType = {
-  title: string;
-  description: string;
-  height: string;
-  countries: string[];
-  continent: string;
-  image: string;
-  slug: string;
-  updatedAt: string;
-};
 
 const fuji: MountainType = {
   title: "Fuji",
@@ -175,7 +152,7 @@ function HomePage() {
 
       {!isServer ? (
         <ErrorBoundary fallback={<h2>Could not fetch posts.</h2>}>
-          <Suspense fallback={<div>loading...</div>}>
+          <Suspense fallback={<div>suspended...</div>}>
             <Mountains />
           </Suspense>
           <MountainsLoadable />
